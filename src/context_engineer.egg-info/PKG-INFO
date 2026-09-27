@@ -1,0 +1,15 @@
+Metadata-Version: 2.4
+Name: context-engineer
+Version: 0.1.0
+Summary: Deterministic prefix-cache aware context management layer for LLM agents
+Author: Context Engineer Team
+License: MIT
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: rank-bm25>=0.2.2
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: rich>=13.0.0
+Requires-Dist: tiktoken>=0.7.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0.0; extra == "dev"
+Requires-Dist: transformers>=4.40.0; extra == "dev"
