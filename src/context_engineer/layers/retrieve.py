@@ -6,7 +6,7 @@ matching turn UNCAPPED (restoring raw original content / tool outputs) and
 reserves its token budget for dynamic suffix injection.
 """
 
-import copy
+import dataclasses
 import re
 from dataclasses import dataclass
 
@@ -35,13 +35,14 @@ def _tokenize_for_bm25(text: str) -> list[str]:
 
 def get_uncapped_turn(turn: Turn) -> Turn:
     """Returns a copy of the turn with raw uncapped content and tool_output restored."""
-    new_turn = copy.copy(turn)
-    if turn.raw_content is not None:
-        new_turn.content = turn.raw_content
-    if turn.raw_tool_output is not None:
-        new_turn.tool_output = turn.raw_tool_output
-    new_turn.is_capped = False
-    return new_turn
+    content = turn.raw_content if turn.raw_content is not None else turn.content
+    tool_output = turn.raw_tool_output if turn.raw_tool_output is not None else turn.tool_output
+    return dataclasses.replace(
+        turn,
+        content=content,
+        tool_output=tool_output,
+        is_capped=False,
+    )
 
 
 def apply_retrieve_layer(

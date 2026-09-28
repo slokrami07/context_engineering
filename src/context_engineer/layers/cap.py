@@ -7,7 +7,7 @@ Preserves the raw uncapped content for downstream uncapped retrieval,
 and returns the processed turns without evicting any turn yet.
 """
 
-import copy
+import dataclasses
 
 from context_engineer.config import ContextConfig
 from context_engineer.tokenizer import count_tokens, slice_head_tail
@@ -19,36 +19,51 @@ def cap_turn(turn: Turn, config: ContextConfig) -> Turn:
 
     Keeps raw_content and raw_tool_output intact for later retrieval.
     """
-    # Clone turn to avoid unwanted in-place mutations of user's original object
-    new_turn = copy.copy(turn)
+    tool_output = turn.tool_output
+    raw_tool_output = turn.raw_tool_output
+    content = turn.content
+    raw_content = turn.raw_content
+    is_capped = turn.is_capped
 
     # Check tool_output first
-    if new_turn.tool_output:
-        tok_count = count_tokens(new_turn.tool_output, model_name=config.model_name)
+    if tool_output:
+        tok_count = count_tokens(tool_output, model_name=config.model_name)
         if tok_count > config.cap_threshold:
-            new_turn.raw_tool_output = new_turn.tool_output
-            new_turn.tool_output = slice_head_tail(
-                new_turn.tool_output,
+            if raw_tool_output is None:
+                raw_tool_output = tool_output
+            tool_output = slice_head_tail(
+                tool_output,
                 head_tokens=config.cap_head_tokens,
                 tail_tokens=config.cap_tail_tokens,
                 model_name=config.model_name,
             )
-            new_turn.is_capped = True
+            is_capped = True
 
     # If the turn role is 'tool' or content itself is a huge tool log
-    if (new_turn.role == "tool" or "[Tool Output]" in new_turn.content) and not new_turn.is_capped:
-        tok_count = count_tokens(new_turn.content, model_name=config.model_name)
+    if (turn.role == "tool" or "[Tool Output]" in turn.content) and not is_capped:
+        tok_count = count_tokens(content, model_name=config.model_name)
         if tok_count > config.cap_threshold:
-            new_turn.raw_content = new_turn.content
-            new_turn.content = slice_head_tail(
-                new_turn.content,
+            if raw_content is None:
+                raw_content = content
+            content = slice_head_tail(
+                content,
                 head_tokens=config.cap_head_tokens,
                 tail_tokens=config.cap_tail_tokens,
                 model_name=config.model_name,
             )
-            new_turn.is_capped = True
+            is_capped = True
 
-    return new_turn
+    if not is_capped and tool_output == turn.tool_output and content == turn.content:
+        return turn
+
+    return dataclasses.replace(
+        turn,
+        content=content,
+        tool_output=tool_output,
+        raw_content=raw_content,
+        raw_tool_output=raw_tool_output,
+        is_capped=is_capped,
+    )
 
 
 def apply_cap_layer(turns: list[Turn], config: ContextConfig | None = None) -> list[Turn]:
