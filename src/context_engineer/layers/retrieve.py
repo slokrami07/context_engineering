@@ -6,25 +6,24 @@ matching turn UNCAPPED (restoring raw original content / tool outputs) and
 reserves its token budget for dynamic suffix injection.
 """
 
-from dataclasses import dataclass
-from typing import Optional
 import copy
 import re
+from dataclasses import dataclass
 
 from rank_bm25 import BM25Okapi
 
 from context_engineer.config import ContextConfig
-from context_engineer.types import Turn
-from context_engineer.tokenizer import count_turn_tokens
 from context_engineer.layers.window import apply_window_layer
+from context_engineer.tokenizer import count_turn_tokens
+from context_engineer.types import Turn
 
 
 @dataclass
 class RetrieveResult:
     """Output of the Retrieve Layer."""
 
-    retrieved_turn: Optional[Turn]
-    retrieved_turn_id: Optional[int]
+    retrieved_turn: Turn | None
+    retrieved_turn_id: int | None
     score: float
     retrieval_tokens: int
 
@@ -49,7 +48,7 @@ def apply_retrieve_layer(
     unpinned_turns: list[Turn],
     query: str,
     available_budget: int,
-    config: Optional[ContextConfig] = None,
+    config: ContextConfig | None = None,
 ) -> RetrieveResult:
     """Layer 3 pipeline entry point: retrieves relevant dropped turns via BM25.
 

@@ -3,10 +3,10 @@
 Parses standard ChatGPT conversations.json tree mappings into normalized Turn sequences.
 """
 
-from typing import Any, Optional
 import json
+from typing import Any
 
-from context_engineer.types import Turn, IngestionPayload
+from context_engineer.types import IngestionPayload, Turn
 
 
 class ChatGPTAdapter:
@@ -35,12 +35,12 @@ class ChatGPTAdapter:
         mapping = conv.get("mapping", {})
 
         turns: list[Turn] = []
-        system_prompt: Optional[str] = None
+        system_prompt: str | None = None
 
         # Build chronological thread from tree mapping
         # Find root node (node without parent or parent not in mapping)
-        node_map = {}
-        children_map = {}
+        node_map: dict[str, Any] = {}
+        children_map: dict[str, list[str]] = {}
         for node_id, node in mapping.items():
             node_map[node_id] = node
             parent_id = node.get("parent")
@@ -61,7 +61,7 @@ class ChatGPTAdapter:
         else:
             # Fallback: topological or creation order
             nodes = [n for n in mapping.values() if n.get("message")]
-            nodes.sort(key=lambda x: (x.get("message", {}).get("create_time") or 0))
+            nodes.sort(key=lambda x: x.get("message", {}).get("create_time") or 0)
             ordered_node_ids = [n["id"] for n in nodes]
 
         turn_idx = 0

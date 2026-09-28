@@ -1,9 +1,8 @@
 """Abstract Base Store for persisting conversations, turns, and metadata."""
 
 from abc import ABC, abstractmethod
-from typing import Optional
 
-from context_engineer.types import Turn, IngestionPayload
+from context_engineer.types import IngestionPayload, Turn
 
 
 class BaseConversationStore(ABC):
@@ -15,7 +14,7 @@ class BaseConversationStore(ABC):
         pass
 
     @abstractmethod
-    def get_turns(self, session_id: str, limit: Optional[int] = None) -> list[Turn]:
+    def get_turns(self, session_id: str, limit: int | None = None) -> list[Turn]:
         """Retrieves turns for a given session in chronological sequence."""
         pass
 
@@ -25,7 +24,7 @@ class BaseConversationStore(ABC):
         pass
 
     @abstractmethod
-    def get_session(self, session_id: str) -> Optional[IngestionPayload]:
+    def get_session(self, session_id: str) -> IngestionPayload | None:
         """Retrieves an entire IngestionPayload for a session ID."""
         pass
 

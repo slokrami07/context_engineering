@@ -5,21 +5,31 @@ describing the conversation shape while strictly forbidding specific entity name
 partition IDs, hashes, or hex codes to prevent stale fact hallucination and context rot.
 """
 
-from typing import Optional
 import re
 
 from context_engineer.config import ContextConfig
-from context_engineer.types import Turn
 from context_engineer.tokenizer import count_message_tokens, truncate_text_to_tokens
+from context_engineer.types import Turn
 
 # Regex scrubbers to neutralize hallucination-inducing entities
 ENTITY_PATTERNS = [
     # Shard / partition / host / node identifiers (e.g. shard-19, partition-42, node-01)
-    (re.compile(r"\b(shard|partition|node|cluster|server|instance|worker|pod|host|broker)[-_][a-zA-Z0-9_-]+\b", re.IGNORECASE), "[resource]"),
+    (
+        re.compile(
+            r"\b(shard|partition|node|cluster|server|instance|worker|pod|host|broker)[-_][a-zA-Z0-9_-]+\b",
+            re.IGNORECASE,
+        ),
+        "[resource]",
+    ),
     # Hexadecimal values and error codes (e.g. 0xDEADBEEF, 0x1f)
     (re.compile(r"\b0x[0-9a-fA-F]+\b"), "[code]"),
     # UUIDs
-    (re.compile(r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"), "[id]"),
+    (
+        re.compile(
+            r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+        ),
+        "[id]",
+    ),
     # IP addresses
     (re.compile(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?\b"), "[address]"),
     # Long hex hashes (e.g. git commits, sha256)
@@ -79,8 +89,8 @@ def generate_narrative_summary(turns: list[Turn]) -> str:
 
 def apply_summarize_layer(
     dropped_turns: list[Turn],
-    config: Optional[ContextConfig] = None,
-) -> tuple[Optional[str], int]:
+    config: ContextConfig | None = None,
+) -> tuple[str | None, int]:
     """Layer 5 pipeline entry point: builds an entity-free rolling summary for evicted turns.
 
     Args:
@@ -106,5 +116,7 @@ def apply_summarize_layer(
         model_name=config.model_name,
     )
 
-    summary_tokens = count_message_tokens("system", f"[Historical Summary]: {budgeted_summary}", model_name=config.model_name)
+    summary_tokens = count_message_tokens(
+        "system", f"[Historical Summary]: {budgeted_summary}", model_name=config.model_name
+    )
     return budgeted_summary, summary_tokens

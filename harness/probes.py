@@ -4,9 +4,8 @@ Simulates a high-scale production outage investigation with telemetry logs,
 tool diagnostics, and a buried root-cause fact needle.
 """
 
-from dataclasses import dataclass
-from typing import Optional
 import random
+from dataclasses import dataclass
 
 from context_engineer.types import Turn
 
@@ -61,17 +60,35 @@ def generate_incident_turns(
 
     background_templates = [
         ("user", "What is the current p99 latency across the ingress proxies?"),
-        ("assistant", "Ingress proxy telemetry indicates p99 latency elevated to 420ms across region us-east-1. Error rate 0.4%."),
+        (
+            "assistant",
+            "Ingress proxy telemetry indicates p99 latency elevated to 420ms across region us-east-1. Error rate 0.4%.",
+        ),
         ("user", "Run health checks on upstream connection pools."),
-        ("assistant", "Upstream pools connection status: 98.2% healthy. 4 pool sockets timed out during handshakes."),
+        (
+            "assistant",
+            "Upstream pools connection status: 98.2% healthy. 4 pool sockets timed out during handshakes.",
+        ),
         ("user", "Check memory consumption on cache cluster nodes."),
-        ("assistant", "Cache cluster memory utilization steady at 64.1%. Eviction rates within nominal thresholds."),
+        (
+            "assistant",
+            "Cache cluster memory utilization steady at 64.1%. Eviction rates within nominal thresholds.",
+        ),
         ("user", "Are there any pending lock contentions on the relational read replicas?"),
-        ("assistant", "Relational read replicas report zero deadlock events. Replication lag is under 12ms."),
+        (
+            "assistant",
+            "Relational read replicas report zero deadlock events. Replication lag is under 12ms.",
+        ),
         ("user", "Check the latest deployment canary metrics."),
-        ("assistant", "Canary deployment v2.14.0 is paused. Traffic split held at 5% pending error rate stabilization."),
+        (
+            "assistant",
+            "Canary deployment v2.14.0 is paused. Traffic split held at 5% pending error rate stabilization.",
+        ),
         ("user", "Inspect cross-zone VPC transit peering throughput."),
-        ("assistant", "Transit peering packet drop rate is 0.001%. Bandwidth ceiling operating at 42Gbps."),
+        (
+            "assistant",
+            "Transit peering packet drop rate is 0.001%. Bandwidth ceiling operating at 42Gbps.",
+        ),
     ]
 
     for i in range(total_turns):

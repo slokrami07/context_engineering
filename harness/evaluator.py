@@ -6,19 +6,18 @@ Asserts:
 And produces a detailed token efficiency comparison across context strategies.
 """
 
-from typing import Optional
 import sys
 
 from rich.console import Console
-from rich.table import Table
 from rich.panel import Panel
+from rich.table import Table
 from rich.text import Text
 
+from context_engineer.client import LMStudioClient
 from context_engineer.config import ContextConfig
 from context_engineer.pipeline import assemble_context
-from context_engineer.client import LMStudioClient
-from harness.probes import generate_incident_turns
 from harness.ledger import simulate_cache_performance
+from harness.probes import generate_incident_turns
 
 # Ensure safe console output across all Windows codepages
 console = Console(highlight=False, legacy_windows=False)
@@ -60,7 +59,9 @@ def run_empirical_evaluation(
         needle_value=needle_value,
     )
 
-    console.print(f"[bold green][+][/bold green] Generated {len(probe.turns)} synthetic turns with buried needle in Turn #{probe.needle_turn_id}.")
+    console.print(
+        f"[bold green][+][/bold green] Generated {len(probe.turns)} synthetic turns with buried needle in Turn #{probe.needle_turn_id}."
+    )
 
     # 2. Assemble context using Context-Engineer 5-stage pipeline
     assembled = assemble_context(
@@ -85,12 +86,14 @@ def run_empirical_evaluation(
     roles_order = [m.role for m in assembled.messages]
     has_system = len(roles_order) > 0 and roles_order[0] == "system"
     has_retrieval_at_suffix = False
-    if len(assembled.messages) >= 2:
-        # Penultimate message should be retrieval block if retrieved
-        if assembled.retrieved_turn and "[Retrieved Relevant Historical Context]" in assembled.messages[-2].content:
-            has_retrieval_at_suffix = True
-        elif not assembled.retrieved_turn:
-            has_retrieval_at_suffix = True
+    if len(assembled.messages) >= 2 and (
+        (
+            assembled.retrieved_turn
+            and "[Retrieved Relevant Historical Context]" in assembled.messages[-2].content
+        )
+        or not assembled.retrieved_turn
+    ):
+        has_retrieval_at_suffix = True
 
     # 4. Build Gate 2: fact_recalled
     client = LMStudioClient(base_url=lm_studio_url)
@@ -98,7 +101,9 @@ def run_empirical_evaluation(
     is_live_server = client.is_available()
 
     if is_live_server:
-        console.print(f"[bold green][+][/bold green] Connected to live LM Studio at [cyan]{lm_studio_url}[/cyan]. Dispatching prompt...")
+        console.print(
+            f"[bold green][+][/bold green] Connected to live LM Studio at [cyan]{lm_studio_url}[/cyan]. Dispatching prompt..."
+        )
         try:
             model_response = client.chat_completion(
                 messages=assembled.messages,
@@ -107,7 +112,9 @@ def run_empirical_evaluation(
                 max_tokens=256,
             )
         except Exception as e:
-            console.print(f"[bold yellow]![/bold yellow] Live inference call failed ({e}). Falling back to deterministic verification.")
+            console.print(
+                f"[bold yellow]![/bold yellow] Live inference call failed ({e}). Falling back to deterministic verification."
+            )
             is_live_server = False
 
     if not is_live_server:
@@ -122,12 +129,16 @@ def run_empirical_evaluation(
                 "shard-19 suffered a write queue deadlock and ended up carrying the blame for the cluster write failure."
             )
         else:
-            model_response = "I cannot determine which partition carried the blame from recent turns."
+            model_response = (
+                "I cannot determine which partition carried the blame from recent turns."
+            )
 
     fact_recalled = "shard-19" in model_response.lower()
 
     # 5. Simulate Prefix-Cache Ledger
-    console.print("\n[bold]Running Prefix-Cache Simulation across Multi-Query Progression...[/bold]")
+    console.print(
+        "\n[bold]Running Prefix-Cache Simulation across Multi-Query Progression...[/bold]"
+    )
     ledger_results = simulate_cache_performance(
         turns=probe.turns,
         system_prompt=probe.system_prompt,
@@ -137,7 +148,9 @@ def run_empirical_evaluation(
     from rich.markup import escape
 
     # 6. Render Results Tables
-    table = Table(title="Context Strategy & Prefix-Cache Performance Comparison", border_style="bright_blue")
+    table = Table(
+        title="Context Strategy & Prefix-Cache Performance Comparison", border_style="bright_blue"
+    )
     table.add_column("Strategy", style="bold white")
     table.add_column("Total Prompt Tokens", justify="right")
     table.add_column("Cache Hit Tokens", justify="right", style="green")
@@ -217,7 +230,12 @@ def run_empirical_evaluation(
         )
     )
 
-    all_passed = fact_present and fact_recalled and assembled.budget_plan.is_valid and has_retrieval_at_suffix
+    all_passed = (
+        fact_present
+        and fact_recalled
+        and assembled.budget_plan.is_valid
+        and has_retrieval_at_suffix
+    )
     if all_passed:
         console.print("[bold green][PASS] ALL BUILD GATES PASSED EMPIRICALLY.[/bold green]\n")
     else:

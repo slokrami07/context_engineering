@@ -63,7 +63,12 @@ config = ContextConfig(
 # 2. Define conversational turns
 turns = [
     Turn(id=0, role="user", content="System baseline config", pinned=True),
-    Turn(id=1, role="assistant", content="Found partition: shard-19 write stall error.", tool_output="dump: 0xDEADBEEF"),
+    Turn(
+        id=1,
+        role="assistant",
+        content="Found partition: shard-19 write stall error.",
+        tool_output="dump: 0xDEADBEEF",
+    ),
     Turn(id=2, role="user", content="Continue investigation and monitor cluster..."),
 ]
 
@@ -117,16 +122,19 @@ python -m harness.evaluator
 - **ChatGPT Export Adapter:** Parse `conversations.json` into normalized `Turn` sequences.
   ```python
   from context_engineer.adapters import ChatGPTAdapter
+
   payload = ChatGPTAdapter().parse(export_json)
   ```
 - **Claude Export Adapter:** Ingest Claude export JSON.
   ```python
   from context_engineer.adapters import ClaudeAdapter
+
   payload = ClaudeAdapter().parse(claude_json)
   ```
 - **Zero-Config SQLite Store:**
   ```python
   from context_engineer.store import SQLiteStore
+
   store = SQLiteStore("conversations.db")
   store.save_turn("session-1", turn)
   ```

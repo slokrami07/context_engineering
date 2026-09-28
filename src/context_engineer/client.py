@@ -1,8 +1,9 @@
 """OpenAI-compatible HTTP client for LM Studio."""
 
-from typing import Any, Optional
-import httpx
 import logging
+from typing import Any
+
+import httpx
 
 from context_engineer.types import Message
 
@@ -53,7 +54,7 @@ class LMStudioClient:
         model: str = "qwen/qwen3.5-9b",
         temperature: float = 0.0,
         max_tokens: int = 256,
-        stop: Optional[list[str]] = None,
+        stop: list[str] | None = None,
     ) -> str:
         """Dispatches a chat completion request to the LM Studio endpoint."""
         url = f"{self.base_url}/chat/completions"
@@ -76,4 +77,4 @@ class LMStudioClient:
             raise RuntimeError(f"No choices returned from LM Studio response: {result}")
 
         content = choices[0].get("message", {}).get("content", "")
-        return content
+        return str(content)

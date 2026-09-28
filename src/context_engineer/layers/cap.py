@@ -7,12 +7,11 @@ Preserves the raw uncapped content for downstream uncapped retrieval,
 and returns the processed turns without evicting any turn yet.
 """
 
-from typing import Optional
 import copy
 
 from context_engineer.config import ContextConfig
-from context_engineer.types import Turn
 from context_engineer.tokenizer import count_tokens, slice_head_tail
+from context_engineer.types import Turn
 
 
 def cap_turn(turn: Turn, config: ContextConfig) -> Turn:
@@ -52,7 +51,7 @@ def cap_turn(turn: Turn, config: ContextConfig) -> Turn:
     return new_turn
 
 
-def apply_cap_layer(turns: list[Turn], config: Optional[ContextConfig] = None) -> list[Turn]:
+def apply_cap_layer(turns: list[Turn], config: ContextConfig | None = None) -> list[Turn]:
     """Layer 1 pipeline entry point: truncates oversized tool outputs across all turns.
 
     Args:

@@ -3,10 +3,10 @@
 Parses Claude conversation export format into normalized Turn sequences.
 """
 
-from typing import Any, Optional
 import json
+from typing import Any
 
-from context_engineer.types import Turn, IngestionPayload
+from context_engineer.types import IngestionPayload, Turn
 
 
 class ClaudeAdapter:
@@ -31,9 +31,7 @@ class ClaudeAdapter:
         chat_messages = conv.get("chat_messages", [])
 
         turns: list[Turn] = []
-        turn_idx = 0
-
-        for msg in chat_messages:
+        for turn_idx, msg in enumerate(chat_messages):
             sender = msg.get("sender", "human")
             role = "user" if sender == "human" else "assistant"
             text = msg.get("text", "")
@@ -46,7 +44,6 @@ class ClaudeAdapter:
                 metadata={"uuid": msg.get("uuid"), "created_at": msg.get("created_at")},
             )
             turns.append(turn)
-            turn_idx += 1
 
         return IngestionPayload(
             session_id=session_id,
@@ -58,11 +55,13 @@ class ClaudeAdapter:
         """Exports an IngestionPayload to Claude JSON format."""
         chat_messages = []
         for turn in payload.turns:
-            chat_messages.append({
-                "uuid": f"claude-msg-{turn.id}",
-                "sender": "human" if turn.role == "user" else "assistant",
-                "text": turn.get_effective_text(),
-            })
+            chat_messages.append(
+                {
+                    "uuid": f"claude-msg-{turn.id}",
+                    "sender": "human" if turn.role == "user" else "assistant",
+                    "text": turn.get_effective_text(),
+                }
+            )
 
         return {
             "uuid": payload.session_id,

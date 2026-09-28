@@ -1,14 +1,12 @@
 """Unit tests for the 5 individual pipeline layers."""
 
-import pytest
-
 from context_engineer.config import ContextConfig
-from context_engineer.types import Turn
 from context_engineer.layers.cap import apply_cap_layer
 from context_engineer.layers.pin import apply_pin_layer
 from context_engineer.layers.retrieve import apply_retrieve_layer
-from context_engineer.layers.window import apply_window_layer
 from context_engineer.layers.summarize import apply_summarize_layer, scrub_entities
+from context_engineer.layers.window import apply_window_layer
+from context_engineer.types import Turn
 
 
 def test_layer1_cap() -> None:
@@ -28,6 +26,7 @@ def test_layer1_cap() -> None:
 
     assert capped.is_capped is True
     assert capped.raw_tool_output == long_tool_output
+    assert capped.tool_output is not None
     assert "[..." in capped.tool_output
     assert "tokens elided ...]" in capped.tool_output
 
@@ -53,11 +52,18 @@ def test_layer3_retrieve_dropped_turn() -> None:
     config = ContextConfig(context_ceiling=400, completion_reserve=50, bm25_min_score=0.1)
     # Create turns where older turn contains needle
     turns = [
-        Turn(id=0, role="assistant", content="Telemetry: shard-42 corrupted buffer.", tool_output="raw error dump"),
+        Turn(
+            id=0,
+            role="assistant",
+            content="Telemetry: shard-42 corrupted buffer.",
+            tool_output="raw error dump",
+        ),
     ]
     # Add many turns so turn 0 will be outside the small window budget
     for i in range(1, 20):
-        turns.append(Turn(id=i, role="user", content=f"Step {i} regular discussion about cluster metrics."))
+        turns.append(
+            Turn(id=i, role="user", content=f"Step {i} regular discussion about cluster metrics.")
+        )
 
     result = apply_retrieve_layer(
         unpinned_turns=turns,

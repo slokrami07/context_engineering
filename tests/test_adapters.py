@@ -1,11 +1,7 @@
 """Unit tests for ChatGPT and Claude conversation export adapters."""
 
-import pytest
-import json
-
 from context_engineer.adapters.chatgpt import ChatGPTAdapter
 from context_engineer.adapters.claude import ClaudeAdapter
-from context_engineer.types import Turn, IngestionPayload
 
 
 def test_chatgpt_adapter_parsing() -> None:
@@ -32,7 +28,10 @@ def test_chatgpt_adapter_parsing() -> None:
                 "message": {
                     "id": "m2",
                     "author": {"role": "user"},
-                    "content": {"content_type": "text", "parts": ["What happened to partition 19?"]},
+                    "content": {
+                        "content_type": "text",
+                        "parts": ["What happened to partition 19?"],
+                    },
                     "create_time": 1001.0,
                 },
             },
@@ -43,7 +42,10 @@ def test_chatgpt_adapter_parsing() -> None:
                 "message": {
                     "id": "m3",
                     "author": {"role": "assistant"},
-                    "content": {"content_type": "text", "parts": ["Partition 19 failed with error."]},
+                    "content": {
+                        "content_type": "text",
+                        "parts": ["Partition 19 failed with error."],
+                    },
                     "create_time": 1002.0,
                 },
             },

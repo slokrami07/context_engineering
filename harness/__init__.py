@@ -1,7 +1,7 @@
 """Measurement and benchmarking harness for context-engineer."""
 
-from harness.probes import generate_incident_turns, PlantedProbe
 from harness.ledger import PrefixCacheLedger, simulate_cache_performance
+from harness.probes import PlantedProbe, generate_incident_turns
 
 __all__ = [
     "generate_incident_turns",
@@ -9,4 +9,3 @@ __all__ = [
     "PrefixCacheLedger",
     "simulate_cache_performance",
 ]
-

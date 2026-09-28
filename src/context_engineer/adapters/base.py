@@ -1,7 +1,8 @@
 """Generic parser protocol and base classes for conversation export adapters."""
 
 from typing import Any, Protocol
-from context_engineer.types import IngestionPayload, Turn
+
+from context_engineer.types import IngestionPayload
 
 
 class BaseAdapter(Protocol):

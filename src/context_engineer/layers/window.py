@@ -5,11 +5,10 @@ Guarantees contiguous conversational history to maintain conversational flow.
 """
 
 from dataclasses import dataclass
-from typing import Optional
 
 from context_engineer.config import ContextConfig
-from context_engineer.types import Turn
 from context_engineer.tokenizer import count_turn_tokens
+from context_engineer.types import Turn
 
 
 @dataclass
@@ -24,8 +23,8 @@ class WindowResult:
 def apply_window_layer(
     unpinned_turns: list[Turn],
     available_budget: int,
-    config: Optional[ContextConfig] = None,
-    excluded_turn_ids: Optional[set[int]] = None,
+    config: ContextConfig | None = None,
+    excluded_turn_ids: set[int] | None = None,
 ) -> WindowResult:
     """Greedily fits the most recent contiguous turns into available_budget.
 

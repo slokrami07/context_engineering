@@ -4,8 +4,8 @@ Supports HuggingFace AutoTokenizer (Qwen/Qwen2.5-7B-Instruct) with robust
 fallback to tiktoken (cl100k_base/o200k_base) for deterministic offline operation.
 """
 
-from typing import Any, Optional, Protocol
 import logging
+from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
 
@@ -55,10 +55,12 @@ class HFTokenizerWrapper:
         self._tokenizer = tokenizer
 
     def encode(self, text: str) -> list[int]:
-        return self._tokenizer.encode(text, add_special_tokens=False)
+        res = self._tokenizer.encode(text, add_special_tokens=False)
+        return [int(t) for t in res]
 
     def decode(self, tokens: list[int]) -> str:
-        return self._tokenizer.decode(tokens, skip_special_tokens=False)
+        res = self._tokenizer.decode(tokens, skip_special_tokens=False)
+        return str(res)
 
     def count(self, text: str) -> int:
         if not text:
@@ -76,7 +78,7 @@ def get_tokenizer(model_name: str = "Qwen/Qwen2.5-7B-Instruct") -> BaseTokenizer
 
     # First attempt: Try HuggingFace AutoTokenizer if transformers is installed
     try:
-        from transformers import AutoTokenizer  # type: ignore
+        from transformers import AutoTokenizer
 
         # Use local_files_only first if cached, or load with timeout
         hf_tok = AutoTokenizer.from_pretrained(
@@ -84,17 +86,17 @@ def get_tokenizer(model_name: str = "Qwen/Qwen2.5-7B-Instruct") -> BaseTokenizer
             trust_remote_code=True,
             local_files_only=False,
         )
-        wrapper = HFTokenizerWrapper(hf_tok)
-        _TOKENIZER_CACHE[model_name] = wrapper
-        return wrapper
+        hf_wrapper = HFTokenizerWrapper(hf_tok)
+        _TOKENIZER_CACHE[model_name] = hf_wrapper
+        return hf_wrapper
     except Exception as e:
         logger.debug("HuggingFace tokenizer load skipped (%s), falling back to tiktoken", e)
 
     # Fallback: tiktoken
     try:
-        wrapper = TiktokenFallbackWrapper()
-        _TOKENIZER_CACHE[model_name] = wrapper
-        return wrapper
+        tik_wrapper = TiktokenFallbackWrapper()
+        _TOKENIZER_CACHE[model_name] = tik_wrapper
+        return tik_wrapper
     except Exception as e:
         logger.warning("Tiktoken failed (%s), using character heuristic fallback", e)
 
@@ -108,9 +110,9 @@ def get_tokenizer(model_name: str = "Qwen/Qwen2.5-7B-Instruct") -> BaseTokenizer
             def count(self, text: str) -> int:
                 return max(1, len(text) // 4) if text else 0
 
-        wrapper = CharFallbackWrapper()  # type: ignore
-        _TOKENIZER_CACHE[model_name] = wrapper
-        return wrapper
+        char_wrapper = CharFallbackWrapper()
+        _TOKENIZER_CACHE[model_name] = char_wrapper
+        return char_wrapper
 
 
 def count_tokens(text: str, model_name: str = "Qwen/Qwen2.5-7B-Instruct") -> int:
@@ -163,10 +165,7 @@ def truncate_text_to_tokens(
     tokens = tokenizer.encode(text)
     if len(tokens) <= max_tokens:
         return text
-    if from_tail:
-        sliced_tokens = tokens[-max_tokens:]
-    else:
-        sliced_tokens = tokens[:max_tokens]
+    sliced_tokens = tokens[-max_tokens:] if from_tail else tokens[:max_tokens]
     return tokenizer.decode(sliced_tokens)
 
 

@@ -1,6 +1,6 @@
 """Configuration limits and defaults for context-engineer."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass

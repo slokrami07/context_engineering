@@ -8,12 +8,11 @@ for local runtimes (such as LM Studio / llama.cpp / vLLM). Compares:
 """
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 from context_engineer.config import ContextConfig
-from context_engineer.types import Turn, Message
-from context_engineer.tokenizer import count_tokens, get_tokenizer
 from context_engineer.pipeline import assemble_context
+from context_engineer.tokenizer import count_tokens, get_tokenizer
+from context_engineer.types import Message, Turn
 
 
 @dataclass
@@ -25,7 +24,7 @@ class StrategyMetrics:
     cache_hit_tokens: int = 0
     computed_tokens: int = 0
     overflow_occurred: bool = False
-    overflow_turn: Optional[int] = None
+    overflow_turn: int | None = None
     step_records: list[dict] = field(default_factory=list)
 
     @property
@@ -47,7 +46,7 @@ def _calculate_common_prefix(prev_tokens: list[int], curr_tokens: list[int]) -> 
 class PrefixCacheLedger:
     """Tracks and simulates prefix-cache performance across multiple turns and queries."""
 
-    def __init__(self, config: Optional[ContextConfig] = None) -> None:
+    def __init__(self, config: ContextConfig | None = None) -> None:
         self.config = config or ContextConfig()
         self.tokenizer = get_tokenizer(self.config.model_name)
 
@@ -113,12 +112,14 @@ class PrefixCacheLedger:
                     raw_strat.cache_hit_tokens += hit
                     raw_strat.computed_tokens += miss
                     prev_tokens["Raw Append-Only"] = tokens
-                    raw_strat.step_records.append({
-                        "depth": turn_depth,
-                        "tokens": tok_len,
-                        "hit": hit,
-                        "miss": miss,
-                    })
+                    raw_strat.step_records.append(
+                        {
+                            "depth": turn_depth,
+                            "tokens": tok_len,
+                            "hit": hit,
+                            "miss": miss,
+                        }
+                    )
 
             # -------------------------------------------------------------
             # Strategy B: Chronological RAG Window
@@ -130,7 +131,12 @@ class PrefixCacheLedger:
             # In Chronological RAG, older turns are evicted when budget is exceeded.
             # If a memory is retrieved (e.g. from turn 14), it is inserted chronologically
             # near turn 14, which shifts and invalidates every token after it!
-            avail = self.config.effective_budget - count_tokens(system_prompt) - count_tokens(query_text) - 50
+            avail = (
+                self.config.effective_budget
+                - count_tokens(system_prompt)
+                - count_tokens(query_text)
+                - 50
+            )
             packed_turns = []
             used = 0
             for t in reversed(active_turns):
@@ -145,7 +151,11 @@ class PrefixCacheLedger:
             chrono_turn_list = list(reversed(packed_turns))
             if "partition" in query_text.lower() or "blame" in query_text.lower():
                 # Injected at the head of conversational turns (chronological)
-                chrono_msgs.append(Message("system", "[Retrieved earlier]: shard-19 suffered write queue deadlock."))
+                chrono_msgs.append(
+                    Message(
+                        "system", "[Retrieved earlier]: shard-19 suffered write queue deadlock."
+                    )
+                )
 
             for t in chrono_turn_list:
                 chrono_msgs.append(Message(t.role, t.get_effective_text()))
@@ -159,12 +169,14 @@ class PrefixCacheLedger:
             chrono_strat.cache_hit_tokens += hit
             chrono_strat.computed_tokens += miss
             prev_tokens["Chronological RAG Window"] = tokens
-            chrono_strat.step_records.append({
-                "depth": turn_depth,
-                "tokens": tok_len,
-                "hit": hit,
-                "miss": miss,
-            })
+            chrono_strat.step_records.append(
+                {
+                    "depth": turn_depth,
+                    "tokens": tok_len,
+                    "hit": hit,
+                    "miss": miss,
+                }
+            )
 
             # -------------------------------------------------------------
             # Strategy C: Context-Engineer 5-Stage Pipeline
@@ -185,13 +197,15 @@ class PrefixCacheLedger:
             ce_strat.cache_hit_tokens += hit
             ce_strat.computed_tokens += miss
             prev_tokens["Context-Engineer"] = tokens
-            ce_strat.step_records.append({
-                "depth": turn_depth,
-                "tokens": tok_len,
-                "hit": hit,
-                "miss": miss,
-                "budget_plan": assembled.budget_plan,
-            })
+            ce_strat.step_records.append(
+                {
+                    "depth": turn_depth,
+                    "tokens": tok_len,
+                    "hit": hit,
+                    "miss": miss,
+                    "budget_plan": assembled.budget_plan,
+                }
+            )
 
         return metrics
 
@@ -199,7 +213,7 @@ class PrefixCacheLedger:
 def simulate_cache_performance(
     turns: list[Turn],
     system_prompt: str,
-    config: Optional[ContextConfig] = None,
+    config: ContextConfig | None = None,
 ) -> dict[str, StrategyMetrics]:
     """Runs a standard progression measuring multi-query follow-up prefix reuse.
 

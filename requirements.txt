@@ -1,3 +1,2 @@
-langchain==1.4.0
-langchain-openai==1.6.0
-python-dotenv==1.2.3
+# Minimal install for development
+-e .[dev]

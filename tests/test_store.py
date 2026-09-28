@@ -1,15 +1,17 @@
 """Unit tests for SQLite conversation store."""
 
-import pytest
 import os
 import tempfile
+from collections.abc import Generator
+
+import pytest
 
 from context_engineer.store.sqlite import SQLiteStore
-from context_engineer.types import Turn, IngestionPayload
+from context_engineer.types import IngestionPayload, Turn
 
 
 @pytest.fixture
-def temp_db_path() -> str:
+def temp_db_path() -> Generator[str, None, None]:
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     yield path

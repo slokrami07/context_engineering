@@ -1,12 +1,12 @@
 """Zero-config SQLite conversation store."""
 
-from typing import Optional, Generator
-from contextlib import contextmanager
 import json
 import sqlite3
+from collections.abc import Generator
+from contextlib import contextmanager
 
-from context_engineer.types import Turn, IngestionPayload
 from context_engineer.store.base import BaseConversationStore
+from context_engineer.types import IngestionPayload, Turn
 
 
 class SQLiteStore(BaseConversationStore):
@@ -86,7 +86,7 @@ class SQLiteStore(BaseConversationStore):
             )
             conn.commit()
 
-    def get_turns(self, session_id: str, limit: Optional[int] = None) -> list[Turn]:
+    def get_turns(self, session_id: str, limit: int | None = None) -> list[Turn]:
         """Retrieves turns for a given session sorted by turn_id."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -153,7 +153,7 @@ class SQLiteStore(BaseConversationStore):
                 )
             conn.commit()
 
-    def get_session(self, session_id: str) -> Optional[IngestionPayload]:
+    def get_session(self, session_id: str) -> IngestionPayload | None:
         """Retrieves complete session with system prompt, metadata, and turns."""
         with self._get_connection() as conn:
             cursor = conn.cursor()
@@ -164,9 +164,7 @@ class SQLiteStore(BaseConversationStore):
 
             turns = self.get_turns(session_id)
             metadata = (
-                json.loads(session_row["metadata_json"])
-                if session_row["metadata_json"]
-                else {}
+                json.loads(session_row["metadata_json"]) if session_row["metadata_json"] else {}
             )
             return IngestionPayload(
                 session_id=session_id,

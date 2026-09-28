@@ -1,7 +1,7 @@
 """Core data structures and types for context-engineer."""
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass
@@ -23,10 +23,10 @@ class Turn:
     id: int
     role: str
     content: str
-    tool_output: Optional[str] = None
+    tool_output: str | None = None
     pinned: bool = False
-    raw_content: Optional[str] = None
-    raw_tool_output: Optional[str] = None
+    raw_content: str | None = None
+    raw_tool_output: str | None = None
     is_capped: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -92,7 +92,7 @@ class Message:
 
     role: str
     content: str
-    name: Optional[str] = None
+    name: str | None = None
 
     def to_dict(self) -> dict[str, str]:
         payload: dict[str, str] = {"role": self.role, "content": self.content}
@@ -135,9 +135,9 @@ class AssembledContext:
     budget_plan: BudgetPlan
     ribbon_representation: str
     window_turns: list[Turn]
-    retrieved_turn: Optional[Turn] = None
+    retrieved_turn: Turn | None = None
     dropped_turns: list[Turn] = field(default_factory=list)
-    summary: Optional[str] = None
+    summary: str | None = None
     pinned_turns: list[Turn] = field(default_factory=list)
 
 
@@ -147,5 +147,5 @@ class IngestionPayload:
 
     session_id: str
     turns: list[Turn]
-    system_prompt: Optional[str] = None
+    system_prompt: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)

@@ -4,25 +4,23 @@ Strictly enforces the prefix-cacheable ribbon order:
 [system] [pinned] [summary] [window turns] | [retrieved block] [question]
 """
 
-from typing import Optional
 import logging
 
 from context_engineer.config import ContextConfig
-from context_engineer.types import (
-    Turn,
-    Message,
-    BudgetPlan,
-    AssembledContext,
-)
-from context_engineer.tokenizer import (
-    count_message_tokens,
-    count_turn_tokens,
-)
 from context_engineer.layers.cap import apply_cap_layer
 from context_engineer.layers.pin import apply_pin_layer
 from context_engineer.layers.retrieve import apply_retrieve_layer
-from context_engineer.layers.window import apply_window_layer
 from context_engineer.layers.summarize import apply_summarize_layer
+from context_engineer.layers.window import apply_window_layer
+from context_engineer.tokenizer import (
+    count_message_tokens,
+)
+from context_engineer.types import (
+    AssembledContext,
+    BudgetPlan,
+    Message,
+    Turn,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +29,7 @@ def assemble_context(
     turns: list[Turn],
     query: str,
     system_prompt: str,
-    config: Optional[ContextConfig] = None,
+    config: ContextConfig | None = None,
 ) -> AssembledContext:
     """Assembles multi-turn context enforcing deterministic prefix-cache alignment.
 
@@ -98,10 +96,7 @@ def assemble_context(
     excluded_ids = {retrieved_id} if retrieved_id is not None else set()
     window_budget = max(
         0,
-        pin_result.remaining_budget
-        - query_tokens
-        - retrieval_tokens
-        - config.max_summary_tokens,
+        pin_result.remaining_budget - query_tokens - retrieval_tokens - config.max_summary_tokens,
     )
 
     window_result = apply_window_layer(

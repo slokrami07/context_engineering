@@ -5,11 +5,10 @@ ceiling, establishing the invariant reserved prefix block.
 """
 
 from dataclasses import dataclass
-from typing import Optional
 
 from context_engineer.config import ContextConfig
-from context_engineer.types import Turn
 from context_engineer.tokenizer import count_message_tokens, count_turn_tokens
+from context_engineer.types import Turn
 
 
 @dataclass
@@ -27,7 +26,7 @@ class PinResult:
 def apply_pin_layer(
     turns: list[Turn],
     system_prompt: str,
-    config: Optional[ContextConfig] = None,
+    config: ContextConfig | None = None,
 ) -> PinResult:
     """Layer 2 pipeline entry point: separates pinned turns and deducts invariant token costs.
 

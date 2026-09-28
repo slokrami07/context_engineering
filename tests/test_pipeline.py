@@ -1,10 +1,8 @@
 """Unit tests for the master pipeline and prefix-cache ribbon ordering."""
 
-import pytest
-
 from context_engineer.config import ContextConfig
-from context_engineer.types import Turn
 from context_engineer.pipeline import assemble_context
+from context_engineer.types import Turn
 
 
 def test_ribbon_structure_and_order() -> None:
@@ -13,11 +11,22 @@ def test_ribbon_structure_and_order() -> None:
 
     turns = [
         Turn(id=0, role="user", content="System baseline config.", pinned=True),
-        Turn(id=1, role="assistant", content="Found needle: partition-99 culprit.", tool_output="raw stack trace"),
+        Turn(
+            id=1,
+            role="assistant",
+            content="Found needle: partition-99 culprit.",
+            tool_output="raw stack trace",
+        ),
     ]
     # Add enough turns to exceed budget so dropped turns trigger summary generation
     for i in range(2, 60):
-        turns.append(Turn(id=i, role="user", content=f"Step {i} normal log observation with verbose details about telemetry and metrics."))
+        turns.append(
+            Turn(
+                id=i,
+                role="user",
+                content=f"Step {i} normal log observation with verbose details about telemetry and metrics.",
+            )
+        )
 
     query = "Which partition was the culprit?"
     assembled = assemble_context(
@@ -64,15 +73,33 @@ def test_prefix_cache_stability_at_same_depth() -> None:
         turns.append(Turn(id=i, role="user", content=f"Step {i} discussion."))
 
     # Two distinct queries asked at the same conversation depth
-    ctx1 = assemble_context(turns=turns, query="Query Alpha: check telemetry?", system_prompt=system_prompt, config=config)
-    ctx2 = assemble_context(turns=turns, query="Query Beta: inspect memory pool?", system_prompt=system_prompt, config=config)
+    ctx1 = assemble_context(
+        turns=turns,
+        query="Query Alpha: check telemetry?",
+        system_prompt=system_prompt,
+        config=config,
+    )
+    ctx2 = assemble_context(
+        turns=turns,
+        query="Query Beta: inspect memory pool?",
+        system_prompt=system_prompt,
+        config=config,
+    )
 
     # Find the boundary: all messages before the retrieved block / question
     # The left side (system, pinned, summary, window turns) must match
-    prefix_msgs1 = [m for m in ctx1.messages if not m.content.startswith("[Retrieved") and m != ctx1.messages[-1]]
-    prefix_msgs2 = [m for m in ctx2.messages if not m.content.startswith("[Retrieved") and m != ctx2.messages[-1]]
+    prefix_msgs1 = [
+        m
+        for m in ctx1.messages
+        if not m.content.startswith("[Retrieved") and m != ctx1.messages[-1]
+    ]
+    prefix_msgs2 = [
+        m
+        for m in ctx2.messages
+        if not m.content.startswith("[Retrieved") and m != ctx2.messages[-1]
+    ]
 
     assert len(prefix_msgs1) == len(prefix_msgs2)
-    for m1, m2 in zip(prefix_msgs1, prefix_msgs2):
+    for m1, m2 in zip(prefix_msgs1, prefix_msgs2, strict=True):
         assert m1.role == m2.role
         assert m1.content == m2.content
