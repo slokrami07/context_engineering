@@ -161,7 +161,7 @@ class ContextConfig:
                 f"Invalid summary_placement: {self.summary_placement!r}. Must be 'system', 'user', or 'fused'."
             )
 
-        # Legacy cap limits validation
+        # Legacy cap limits validation and policy synchronization
         if self.cap_threshold <= 0:
             raise ConfigError(f"cap_threshold must be positive, got {self.cap_threshold}")
         if self.cap_head_tokens < 1 or self.cap_tail_tokens < 1:
@@ -170,6 +170,19 @@ class ContextConfig:
             raise ConfigError(
                 f"cap_head_tokens ({self.cap_head_tokens}) + cap_tail_tokens ({self.cap_tail_tokens}) "
                 f"cannot exceed cap_threshold ({self.cap_threshold})"
+            )
+
+        if self.cap_threshold != 400 and self.cap_policy == default_cap_policy():
+            object.__setattr__(
+                self,
+                "cap_policy",
+                CapPolicy(
+                    default_tool_rule=TurnCapRule(
+                        threshold=self.cap_threshold,
+                        head_tokens=self.cap_head_tokens,
+                        tail_tokens=self.cap_tail_tokens,
+                    )
+                ),
             )
 
         # Budget headroom validation

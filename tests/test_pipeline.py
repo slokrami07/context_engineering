@@ -37,26 +37,20 @@ def test_ribbon_structure_and_order() -> None:
     )
 
     msgs = assembled.messages
-    assert len(msgs) >= 4
+    assert len(msgs) >= 2
 
-    # 1. System prompt
+    # 1. Unified Head System message contains system prompt, pinned facts, and summary
     assert msgs[0].role == "system"
-    assert msgs[0].content == system_prompt
+    assert system_prompt in msgs[0].content
+    assert "Pinned facts:" in msgs[0].content
+    assert "System baseline config." in msgs[0].content
+    assert "Earlier conversation (summary):" in msgs[0].content
 
-    # 2. Pinned
-    assert msgs[1].content == "System baseline config."
-
-    # 3. Summary
-    assert any("[Historical Context Summary]" in m.content for m in msgs)
-
-    # 4. Retrieved dynamic block must be penultimate
-    assert msgs[-2].role == "system"
-    assert "[Retrieved Relevant Historical Context]" in msgs[-2].content
-    assert "partition-99" in msgs[-2].content
-
-    # 5. Question must be last
+    # 2. Dynamic Suffix User message contains verbatim retrieved context and user query
     assert msgs[-1].role == "user"
-    assert msgs[-1].content == query
+    assert "Relevant earlier context (verbatim):" in msgs[-1].content
+    assert "partition-99" in msgs[-1].content
+    assert query in msgs[-1].content
 
     # Budget check
     assert assembled.budget_plan.is_valid

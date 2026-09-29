@@ -115,7 +115,7 @@ def main() -> None:
             tool_turn = Turn(
                 id=turn_counter,
                 role="assistant",
-                content="Executed diagnostic tool operation.",
+                content="Executed tool operation.",
                 tool_output=raw_tool,
                 pinned=False,
             )

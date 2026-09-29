@@ -150,20 +150,18 @@ def test_characterize_pipeline_ribbon_structure() -> None:
         config=config,
     )
 
-    # Message roles: [system, pinned(user), summary(system), window..., retrieved(system), query(user)]
+    # Algorithm A5: Unified layout [system + pinned + summary] [window...] | [retrieved + query]
     assert assembled.messages[0].role == "system"
-    assert assembled.messages[0].content == system_prompt
-    assert assembled.messages[1].content == "Pinned fact 1"
-    # Penultimate message must be the retrieved block
-    assert assembled.messages[-2].role == "system"
-    assert "[Retrieved Relevant Historical Context]" in assembled.messages[-2].content
-    # Last message is user query
+    assert system_prompt in assembled.messages[0].content
+    assert "Pinned facts:" in assembled.messages[0].content
+    assert "Pinned fact 1" in assembled.messages[0].content
+    # Last message is dynamic suffix (user query + verbatim retrieved context)
     assert assembled.messages[-1].role == "user"
-    assert assembled.messages[-1].content == query
+    assert query in assembled.messages[-1].content
 
     # Ribbon string format representation
     assert "[sys:" in assembled.ribbon_representation
     assert "[pin:" in assembled.ribbon_representation
     assert "[sum:" in assembled.ribbon_representation
-    assert "| [ret:" in assembled.ribbon_representation
+    assert "| [ret(" in assembled.ribbon_representation
     assert "[q:" in assembled.ribbon_representation

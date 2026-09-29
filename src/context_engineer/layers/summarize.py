@@ -1,101 +1,58 @@
-"""Layer 5: Entity-free rolling summarizer.
+"""Layer 5: Entity-free abstract narrative summarizer for evicted turns (Algorithm A6).
 
-For all dropped turns not retrieved, generates a high-level narrative summary
-describing the conversation shape while strictly forbidding specific entity names,
-partition IDs, hashes, or hex codes to prevent stale fact hallucination and context rot.
+Extracts salient discussion objectives without leaking domain-specific boilerplate or turn counts.
+Applies single-pass redaction to scrub ephemeral identifiers and prevent stale fact hallucination.
 """
 
-import re
+from collections.abc import Sequence
 
 from context_engineer.config import ContextConfig
-from context_engineer.tokenizer import count_message_tokens, truncate_text_to_tokens
+from context_engineer.redaction.redactor import RegexRedactor
+from context_engineer.summarizers.extractive import ExtractiveSummarizer
+from context_engineer.tokenizers import Tokenizer, resolve_tokenizer
 from context_engineer.types import Turn
 
-# Regex scrubbers to neutralize hallucination-inducing entities
-ENTITY_PATTERNS = [
-    # Shard / partition / host / node identifiers (e.g. shard-19, partition-42, node-01)
-    (
-        re.compile(
-            r"\b(shard|partition|node|cluster|server|instance|worker|pod|host|broker)[-_][a-zA-Z0-9_-]+\b",
-            re.IGNORECASE,
-        ),
-        "[resource]",
-    ),
-    # Hexadecimal values and error codes (e.g. 0xDEADBEEF, 0x1f)
-    (re.compile(r"\b0x[0-9a-fA-F]+\b"), "[code]"),
-    # UUIDs
-    (
-        re.compile(
-            r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
-        ),
-        "[id]",
-    ),
-    # IP addresses
-    (re.compile(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?\b"), "[address]"),
-    # Long hex hashes (e.g. git commits, sha256)
-    (re.compile(r"\b[a-f0-9]{12,64}\b", re.IGNORECASE), "[hash]"),
-    # File paths
-    (re.compile(r"(/[a-zA-Z0-9_\.\-]+)+|[a-zA-Z]:\\[a-zA-Z0-9_\.\-\\]+"), "[path]"),
-]
+
+def scrub_entities(
+    text: str,
+    mode: str = "light",
+    resource_prefixes: list[str] | None = None,
+) -> str:
+    """Scrubs sensitive entities, addresses, and identifiers using RegexRedactor."""
+    if mode not in ("none", "light", "strict"):
+        mode = "light"
+    redactor = RegexRedactor(mode=mode, resource_prefixes=resource_prefixes)  # type: ignore[arg-type]
+    return redactor.redact(text)
 
 
-def scrub_entities(text: str) -> str:
-    """Removes specific entity IDs, partition names, and hashes from text."""
-    scrubbed = text
-    for pattern, replacement in ENTITY_PATTERNS:
-        scrubbed = pattern.sub(replacement, scrubbed)
-    return scrubbed
-
-
-def generate_narrative_summary(turns: list[Turn]) -> str:
-    """Generates an abstract narrative describing conversation shape and flow."""
-    if not turns:
+def generate_narrative_summary(
+    turns: Sequence[Turn],
+    max_tokens: int = 256,
+    tokenizer: Tokenizer | None = None,
+    redaction_mode: str = "light",
+    resource_prefixes: list[str] | None = None,
+) -> str:
+    """Generates a domain-agnostic extractive narrative summary for evicted turns."""
+    if not turns or max_tokens <= 0:
         return ""
 
-    user_intents: list[str] = []
-    actions_taken: list[str] = []
-
-    for t in turns:
-        clean_content = scrub_entities(t.content)
-        if t.role == "user":
-            snippet = clean_content.split("\n")[0][:60].strip()
-            if snippet and snippet not in user_intents:
-                user_intents.append(snippet)
-        elif t.role in ("assistant", "tool"):
-            if t.tool_output or t.role == "tool":
-                actions_taken.append("executed diagnostic tool inspections")
-            else:
-                snippet = clean_content.split("\n")[0][:60].strip()
-                if snippet and snippet not in actions_taken:
-                    actions_taken.append(snippet)
-
-    summary_lines = [
-        f"Earlier conversation covered {len(turns)} foundational turns.",
-        "The discussion involved technical troubleshooting, telemetry review, and status verification.",
-    ]
-
-    if user_intents:
-        summary_lines.append(f"Inquiries focused on: {'; '.join(user_intents[:3])}.")
-
-    if actions_taken:
-        summary_lines.append(f"Actions taken: {'; '.join(actions_taken[:2])}.")
-
-    summary_lines.append(
-        "All historical entity identifiers have been abstracted to prevent stale state hallucination."
-    )
-
-    return " ".join(summary_lines)
+    tok = tokenizer or resolve_tokenizer("approx")
+    redactor = RegexRedactor(mode=redaction_mode, resource_prefixes=resource_prefixes)  # type: ignore[arg-type]
+    summarizer = ExtractiveSummarizer(redactor=redactor)
+    return summarizer.summarize(turns, max_tokens=max_tokens, tok=tok)
 
 
 def apply_summarize_layer(
-    dropped_turns: list[Turn],
+    dropped_turns: Sequence[Turn],
     config: ContextConfig | None = None,
+    tokenizer: Tokenizer | None = None,
 ) -> tuple[str | None, int]:
-    """Layer 5 pipeline entry point: builds an entity-free rolling summary for evicted turns.
+    """Layer 5 pipeline entry point: generates abstract narrative summary for evicted turns.
 
     Args:
-        dropped_turns: List of older turns not included in the recency window or retrieval.
-        config: Central configuration.
+        dropped_turns: List of older turns not included in the recency window.
+        config: Central configuration instance.
+        tokenizer: Tokenizer instance.
 
     Returns:
         A tuple of (summary_text, summary_tokens). If dropped_turns is empty, returns (None, 0).
@@ -106,17 +63,16 @@ def apply_summarize_layer(
     if not dropped_turns:
         return None, 0
 
-    raw_summary = generate_narrative_summary(dropped_turns)
-    scrubbed = scrub_entities(raw_summary)
-
-    # Truncate summary to max_summary_tokens
-    budgeted_summary = truncate_text_to_tokens(
-        scrubbed,
+    tok = tokenizer or resolve_tokenizer(config.tokenizer)
+    summary = generate_narrative_summary(
+        dropped_turns,
         max_tokens=config.max_summary_tokens,
-        model_name=config.model_name,
+        tokenizer=tok,
+        redaction_mode=config.redaction_mode,
     )
 
-    summary_tokens = count_message_tokens(
-        "system", f"[Historical Summary]: {budgeted_summary}", model_name=config.model_name
-    )
-    return budgeted_summary, summary_tokens
+    if not summary:
+        return None, 0
+
+    summary_tokens = tok.count(summary)
+    return summary, summary_tokens

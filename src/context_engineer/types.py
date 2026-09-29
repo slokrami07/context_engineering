@@ -261,7 +261,7 @@ class BudgetPlan:
 
 @dataclass(frozen=True, slots=True)
 class AssemblyReport:
-    """Telemetry report emitted with every context assembly for observability and verification."""
+    """Assembly report emitted with every context assembly for observability and verification."""
 
     tokenizer_id: str
     estimated_total_tokens: int

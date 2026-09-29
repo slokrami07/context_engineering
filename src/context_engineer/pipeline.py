@@ -1,206 +1,302 @@
-"""The 5-stage context assembler pipeline for context-engineer.
+"""The 5-stage context assembler pipeline for context-engineer (Algorithm A3).
 
-Strictly enforces the prefix-cacheable ribbon order:
-[system] [pinned] [summary] [window turns] | [retrieved block] [question]
+Enforces prefix stability, fixed reserves, and strict budget containment:
+[system + pinned + summary] [window turns] | [retrieved block + question]
+<------------- prefix-stable zone -------->  <------- dynamic suffix ------>
 """
 
+import hashlib
 import logging
+from collections.abc import Sequence
 
 from context_engineer.config import ContextConfig
+from context_engineer.errors import ContextBudgetError
 from context_engineer.layers.cap import apply_cap_layer
-from context_engineer.layers.pin import apply_pin_layer
-from context_engineer.layers.retrieve import apply_retrieve_layer
-from context_engineer.layers.summarize import apply_summarize_layer
-from context_engineer.layers.window import apply_window_layer
-from context_engineer.tokenizer import (
-    count_message_tokens,
+from context_engineer.layers.pin import split_pinned
+from context_engineer.layers.retrieve import BM25Retriever
+from context_engineer.layers.window import memoized_turn_cost, window_boundary
+from context_engineer.redaction.redactor import RegexRedactor
+from context_engineer.render import gate, render, validate_messages
+from context_engineer.summarizers.extractive import ExtractiveSummarizer
+from context_engineer.tokenizers import (
+    Tokenizer,
+    resolve_tokenizer,
+    truncate_text_to_tokens,
 )
 from context_engineer.types import (
     AssembledContext,
+    AssemblyReport,
     BudgetPlan,
     Message,
     Turn,
+    validate_history,
 )
 
 logger = logging.getLogger(__name__)
 
 
 def assemble_context(
-    turns: list[Turn],
+    turns: Sequence[Turn],
     query: str,
-    system_prompt: str,
+    system_prompt: str = "",
     config: ContextConfig | None = None,
+    tokenizer: Tokenizer | None = None,
 ) -> AssembledContext:
-    """Assembles multi-turn context enforcing deterministic prefix-cache alignment.
+    """Assembles multi-turn conversational context enforcing deterministic prefix-cache alignment (Algorithm A3).
 
-    Prompt Token Ribbon Order:
-    [system] [pinned] [summary] [window turns] | [retrieved block] [question]
-
-    - Left of '|': Prefix-stable zone. Identical across queries at the same turn depth.
-    - Right of '|': Dynamic suffix zone. Retrieval block and user question.
+    Pipeline stages:
+    1. Validation: Verifies chronological IDs and call/result sequencing (T4).
+    2. Pin Partition: Separates pinned invariant facts (pinned turns never capped, I8).
+    3. Cap Layer: Idempotently caps oversized tool results and allowed messages (A10).
+    4. Fixed Reserves: Computes window budget independently of query or retrieval size (A1, I2, I3).
+    5. Window Boundary: Computes stateless quantized boundary on coarse grid (A2, I1, I4).
+    6. Summarize: Extractive summary purely derived from dropped turns (A6, S1-S8).
+    7. Retrieval: Hard-bounded BM25 retrieval over dropped turns (A9, R1-R3).
+    8. Render & Gate: Unified message rendering and final template gate measurement (A5, I5, I6).
 
     Args:
-        turns: Raw conversational history turns.
-        query: Current user question or query.
-        system_prompt: Top-level system instructions.
+        turns: Conversational history turns.
+        query: Current user question / query.
+        system_prompt: Invariant system prompt.
         config: Central configuration limits and thresholds.
+        tokenizer: Optional tokenizer instance.
 
     Returns:
-        AssembledContext ready for LLM API dispatch with full budget breakdown.
+        AssembledContext with unified messages, budget plan, and assembly report.
+
+    Raises:
+        ContextBudgetError: If fixed reserves or rendered prompt exceed ceiling (I5, I9).
+        HistoryError: If input turns violate chronological or structural ordering (T4).
+        StructuralError: If rendered messages violate template requirements (I6).
     """
-    if config is None:
-        config = ContextConfig()
+    cfg = config or ContextConfig()
+    tok = tokenizer or resolve_tokenizer(cfg.tokenizer, strict=cfg.strict_tokenizer)
 
-    query_tokens = count_message_tokens("user", query, model_name=config.model_name)
+    # 1. Structural History Validation (T4)
+    validate_history(turns)
 
-    # -------------------------------------------------------------
-    # Stage 1: Cap Layer
-    # In-place head/tail truncator for oversized tool outputs
-    # -------------------------------------------------------------
-    capped_turns = apply_cap_layer(turns, config=config)
+    # 2. Pin Partitioning (I8: pinned turns are invariant and NEVER capped)
+    pinned, unpinned = split_pinned(turns)
 
-    # -------------------------------------------------------------
-    # Stage 2: Pin Layer
-    # Deducts system prompt + pinned facts from budget ceiling
-    # -------------------------------------------------------------
-    pin_result = apply_pin_layer(capped_turns, system_prompt, config=config)
-    pinned_turns = pin_result.pinned_turns
-    unpinned_turns = pin_result.unpinned_turns
-    system_tokens = pin_result.system_tokens
-    pinned_tokens = pin_result.pinned_tokens
+    # 3. Cap Layer (A10: pure, idempotent, memoized)
+    unpinned = apply_cap_layer(unpinned, config=cfg, tokenizer=tok)
 
-    # -------------------------------------------------------------
-    # Stage 3: Retrieve Layer
-    # Lookahead BM25 retrieval over candidate dropped turns
-    # -------------------------------------------------------------
-    # Estimate budget available for window + dynamic retrieval
-    budget_for_window_and_dynamic = max(
-        0,
-        pin_result.remaining_budget - query_tokens - config.max_summary_tokens,
+    # 4. Fixed Reserves (Algorithm A1: query-independent window budget)
+    effective_ceiling = cfg.context_ceiling - cfg.completion_reserve
+
+    cost_system = 0
+    if system_prompt:
+        cost_system = tok.count_messages(
+            [Message("system", system_prompt)], add_generation_prompt=False
+        )
+
+    cost_pinned = 0
+    if pinned:
+        pinned_facts = "\n".join(f"- {p.get_effective_text()}" for p in pinned)
+        cost_pinned = tok.count_messages(
+            [Message("system", f"Pinned facts:\n{pinned_facts}")],
+            add_generation_prompt=False,
+        )
+
+    fixed_prefix_cost = cost_system + cost_pinned
+    summary_reserve = cfg.max_summary_tokens
+    suffix_reserve = cfg.suffix_reserve_tokens
+    priming_tokens = cfg.priming_tokens
+
+    window_budget = (
+        effective_ceiling - fixed_prefix_cost - summary_reserve - suffix_reserve - priming_tokens
     )
+    if window_budget <= 0:
+        raise ContextBudgetError(
+            f"Fixed reserves exceed ceiling: effective={effective_ceiling}, "
+            f"fixed_prefix={fixed_prefix_cost}, summary={summary_reserve}, "
+            f"suffix={suffix_reserve}, priming={priming_tokens}"
+        )
 
-    retrieve_result = apply_retrieve_layer(
-        unpinned_turns=unpinned_turns,
-        query=query,
-        available_budget=budget_for_window_and_dynamic,
-        config=config,
+    # 5. Window Boundary (Algorithm A2: quantized onto chunk grid)
+    def cost_fn(t: Turn) -> int:
+        return memoized_turn_cost(t, tok)
+
+    boundary = window_boundary(
+        unpinned,
+        window_budget,
+        chunk_tokens=cfg.window_chunk_tokens,
+        min_recent_turns=cfg.min_recent_turns,
+        cost_fn=cost_fn,
+        require_user_start=cfg.require_user_start,
     )
-    retrieved_turn = retrieve_result.retrieved_turn
-    retrieval_tokens = retrieve_result.retrieval_tokens
-    retrieved_id = retrieve_result.retrieved_turn_id
+    window = list(unpinned[boundary:])
+    dropped = list(unpinned[:boundary])
 
-    # -------------------------------------------------------------
-    # Stage 4: Window Layer
-    # Recency-based contiguous turn packing
-    # -------------------------------------------------------------
-    excluded_ids = {retrieved_id} if retrieved_id is not None else set()
-    window_budget = max(
-        0,
-        pin_result.remaining_budget - query_tokens - retrieval_tokens - config.max_summary_tokens,
-    )
+    # 6. Summarize Dropped Turns (Algorithm A6: pure function of dropped turns only)
+    summary_text: str | None = None
+    if dropped and cfg.max_summary_tokens > 0:
+        redactor = RegexRedactor(mode=cfg.redaction_mode)
+        summarizer = ExtractiveSummarizer(redactor=redactor)
+        raw_summary = summarizer.summarize(dropped, max_tokens=cfg.max_summary_tokens, tok=tok)
+        summary_text = raw_summary if raw_summary else None
 
-    window_result = apply_window_layer(
-        unpinned_turns=unpinned_turns,
-        available_budget=window_budget,
-        config=config,
-        excluded_turn_ids=excluded_ids,
-    )
-    window_turns = window_result.window_turns
-    dropped_turns = window_result.dropped_turns
-    window_tokens = window_result.window_tokens
-
-    # -------------------------------------------------------------
-    # Stage 5: Summarize Layer
-    # Entity-free narrative summary of dropped non-retrieved turns
-    # -------------------------------------------------------------
-    summary_text, summary_tokens = apply_summarize_layer(dropped_turns, config=config)
-
-    # -------------------------------------------------------------
-    # Assemble Messages & Enforce Token Ribbon Order:
-    # [system] [pinned] [summary] [window turns] | [retrieved block] [question]
-    # -------------------------------------------------------------
-    messages: list[Message] = []
-
-    # 1. [system]
-    messages.append(Message(role="system", content=system_prompt))
-
-    # 2. [pinned]
-    for pt in pinned_turns:
-        messages.append(Message(role=pt.role, content=pt.get_effective_text()))
-
-    # 3. [summary]
-    if summary_text:
-        messages.append(
-            Message(
-                role="system",
-                content=f"[Historical Context Summary]: {summary_text}",
+    # 7. Dynamic Suffix: Query cost & Bounded Retrieval (Algorithm A9)
+    query_tokens = tok.count(query)
+    if query_tokens > suffix_reserve:
+        if cfg.truncate_query:
+            query = truncate_text_to_tokens(query, max_tokens=suffix_reserve, tokenizer=tok)
+            query_tokens = tok.count(query)
+        else:
+            raise ContextBudgetError(
+                f"User query ({query_tokens} tokens) exceeds suffix reserve ({suffix_reserve} tokens)"
             )
+
+    retrieval_budget = max(0, suffix_reserve - query_tokens)
+    retriever = BM25Retriever()
+    hits = retriever.retrieve(
+        query=query,
+        candidates=dropped,
+        k=cfg.retrieval_top_k,
+        token_budget=retrieval_budget,
+        tok=tok,
+    )
+    retrieval_tokens = sum(tok.count(h.get_effective_text()) for h in hits)
+
+    # 8. Render Unified Messages (Algorithm A5)
+    msgs = render(
+        system_prompt=system_prompt,
+        pinned=pinned,
+        summary=summary_text or "",
+        window=window,
+        hits=hits,
+        query=query,
+        config=cfg,
+    )
+
+    validate_messages(msgs)
+
+    # 9. Final Gate (Algorithm A5, Invariant I5)
+    measured_tokens = gate(msgs, tok, effective_ceiling)
+    if measured_tokens > effective_ceiling:
+        # Recompute ONCE with safety margin deficit deducted
+        deficit = (measured_tokens - effective_ceiling) + int(
+            effective_ceiling * cfg.budget_safety_margin
         )
+        new_window_budget = window_budget - deficit
+        if new_window_budget <= 0:
+            raise ContextBudgetError(
+                f"Rendered prompt tokens ({measured_tokens}) exceed effective ceiling ({effective_ceiling})"
+            )
 
-    # 4. [window turns]
-    for wt in window_turns:
-        messages.append(Message(role=wt.role, content=wt.get_effective_text()))
-
-    # --- PREFIX CACHE BOUNDARY ---
-    # Everything above this point is prefix-stable.
-    # Everything below contains per-query dynamic variations.
-
-    # 5. [retrieved block]
-    if retrieved_turn:
-        uncapped_content = retrieved_turn.get_uncapped_text()
-        retrieval_msg = (
-            f"[Retrieved Relevant Historical Context]:\n"
-            f"- Role: {retrieved_turn.role}\n"
-            f"- Turn #{retrieved_turn.id}\n"
-            f"- Detail: {uncapped_content}"
+        boundary = window_boundary(
+            unpinned,
+            new_window_budget,
+            chunk_tokens=cfg.window_chunk_tokens,
+            min_recent_turns=cfg.min_recent_turns,
+            cost_fn=cost_fn,
+            require_user_start=cfg.require_user_start,
         )
-        messages.append(Message(role="system", content=retrieval_msg))
+        window = list(unpinned[boundary:])
+        dropped = list(unpinned[:boundary])
 
-    # 6. [question]
-    messages.append(Message(role="user", content=query))
+        if dropped and cfg.max_summary_tokens > 0:
+            redactor = RegexRedactor(mode=cfg.redaction_mode)
+            summarizer = ExtractiveSummarizer(redactor=redactor)
+            raw_summary = summarizer.summarize(dropped, max_tokens=cfg.max_summary_tokens, tok=tok)
+            summary_text = raw_summary if raw_summary else None
+        else:
+            summary_text = None
 
-    # Calculate final budget plan
-    total_used = (
-        system_tokens
-        + pinned_tokens
+        hits = retriever.retrieve(
+            query=query,
+            candidates=dropped,
+            k=cfg.retrieval_top_k,
+            token_budget=retrieval_budget,
+            tok=tok,
+        )
+        retrieval_tokens = sum(tok.count(h.get_effective_text()) for h in hits)
+
+        msgs = render(
+            system_prompt=system_prompt,
+            pinned=pinned,
+            summary=summary_text or "",
+            window=window,
+            hits=hits,
+            query=query,
+            config=cfg,
+        )
+        validate_messages(msgs)
+        measured_tokens = gate(msgs, tok, effective_ceiling)
+        if measured_tokens > effective_ceiling:
+            raise ContextBudgetError(
+                f"Rendered prompt tokens ({measured_tokens}) exceed effective ceiling ({effective_ceiling})"
+            )
+
+    # 10. Accounting & Assembly Report
+    window_tokens = sum(cost_fn(t) for t in window)
+    summary_tokens = tok.count(summary_text) if summary_text else 0
+    estimated_total = (
+        fixed_prefix_cost
         + summary_tokens
         + window_tokens
         + retrieval_tokens
         + query_tokens
+        + priming_tokens
     )
-    remaining_tokens = config.effective_budget - total_used
 
     budget_plan = BudgetPlan(
-        context_ceiling=config.context_ceiling,
-        completion_reserve=config.completion_reserve,
-        effective_budget=config.effective_budget,
-        system_tokens=system_tokens,
-        pinned_tokens=pinned_tokens,
+        context_ceiling=cfg.context_ceiling,
+        completion_reserve=cfg.completion_reserve,
+        effective_budget=effective_ceiling,
+        system_tokens=cost_system,
+        pinned_tokens=cost_pinned,
         summary_tokens=summary_tokens,
         window_tokens=window_tokens,
         retrieval_tokens=retrieval_tokens,
         query_tokens=query_tokens,
-        total_used_tokens=total_used,
-        remaining_tokens=remaining_tokens,
+        total_used_tokens=estimated_total,
+        remaining_tokens=max(0, effective_ceiling - measured_tokens),
+        measured_total_tokens=measured_tokens,
+    )
+
+    # Prefix stability calculation: prefix zone includes all messages except the final dynamic user message
+    prefix_messages = msgs[:-1] if len(msgs) > 1 else msgs
+    prefix_content = "".join(f"{m.role}:{m.content}\n" for m in prefix_messages)
+    prefix_hash = hashlib.sha256(prefix_content.encode("utf-8")).hexdigest()
+    summary_hash = (
+        hashlib.sha256(summary_text.encode("utf-8")).hexdigest() if summary_text else None
+    )
+    cache_stable_tokens = tok.count_messages(prefix_messages, add_generation_prompt=False)
+
+    report = AssemblyReport(
+        tokenizer_id=tok.id,
+        estimated_total_tokens=estimated_total,
+        measured_total_tokens=measured_tokens,
+        window_start_index=boundary,
+        boundary_changed=False,
+        compaction_occurred=boundary > 0,
+        dropped_turn_ids=tuple(t.id for t in dropped),
+        retrieved_turn_ids=tuple(h.id for h in hits),
+        summary_hash=summary_hash,
+        prefix_hash=prefix_hash,
+        predicted_cache_stable_tokens=cache_stable_tokens,
     )
 
     ribbon_repr = (
-        f"[sys: {system_tokens}t] "
-        f"[pin: {pinned_tokens}t] "
+        f"[sys: {cost_system}t] "
+        f"[pin: {cost_pinned}t] "
         f"[sum: {summary_tokens}t] "
-        f"[win({len(window_turns)}): {window_tokens}t] "
-        f"| [ret: {retrieval_tokens}t] "
+        f"[win({len(window)}): {window_tokens}t] "
+        f"| [ret({len(hits)}): {retrieval_tokens}t] "
         f"[q: {query_tokens}t] "
-        f"=> {total_used}/{config.effective_budget}t"
+        f"=> {measured_tokens}/{effective_ceiling}t"
     )
 
     return AssembledContext(
-        messages=messages,
+        messages=msgs,
         budget_plan=budget_plan,
         ribbon_representation=ribbon_repr,
-        window_turns=window_turns,
-        retrieved_turn=retrieved_turn,
-        dropped_turns=dropped_turns,
+        window_turns=window,
+        retrieved_turns=tuple(hits),
+        retrieved_turn=hits[0] if hits else None,
+        dropped_turns=dropped,
         summary=summary_text,
-        pinned_turns=pinned_turns,
+        pinned_turns=pinned,
+        report=report,
     )
