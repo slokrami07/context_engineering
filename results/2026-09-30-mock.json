@@ -1,0 +1,173 @@
+{
+  "metadata": {
+    "date": "2026-09-30",
+    "backend": "mock",
+    "cache_mode": "simulated",
+    "model": "mock-model",
+    "turns": 100,
+    "seed": 42,
+    "domain": "systems",
+    "python_version": "3.11.14",
+    "platform": "Windows-10-10.0.26200-SP0"
+  },
+  "progression_results": {
+    "data": [
+      {
+        "strategy_name": "Context-Engineer (Full)",
+        "total_requests": 19,
+        "total_prompt_tokens": 29785,
+        "total_cached_tokens": 23384,
+        "total_computed_tokens": 6401,
+        "overall_hit_rate": 0.7850931677018633,
+        "per_request_hit_rate_median": 0.7855491329479769,
+        "per_request_hit_rate_p10": 0.6411846063907148,
+        "per_request_hit_rate_p90": 0.826638825115932,
+        "overflow_occurred": false,
+        "overflow_turn": null
+      },
+      {
+        "strategy_name": "Suffix-RAG (Unquantized Window)",
+        "total_requests": 19,
+        "total_prompt_tokens": 31279,
+        "total_cached_tokens": 23424,
+        "total_computed_tokens": 7855,
+        "overall_hit_rate": 0.7488730458134851,
+        "per_request_hit_rate_median": 0.7557575757575757,
+        "per_request_hit_rate_p10": 0.5803406174663659,
+        "per_request_hit_rate_p90": 0.7980950088161013,
+        "overflow_occurred": false,
+        "overflow_turn": null
+      },
+      {
+        "strategy_name": "Chronological RAG",
+        "total_requests": 19,
+        "total_prompt_tokens": 31116,
+        "total_cached_tokens": 19322,
+        "total_computed_tokens": 11794,
+        "overall_hit_rate": 0.620966705232035,
+        "per_request_hit_rate_median": 0.6972885471469041,
+        "per_request_hit_rate_p10": 0.10190169030254673,
+        "per_request_hit_rate_p90": 0.8173014799474058,
+        "overflow_occurred": false,
+        "overflow_turn": null
+      },
+      {
+        "strategy_name": "Plain Left-Truncation",
+        "total_requests": 19,
+        "total_prompt_tokens": 29853,
+        "total_cached_tokens": 23434,
+        "total_computed_tokens": 6419,
+        "overall_hit_rate": 0.7849797340300807,
+        "per_request_hit_rate_median": 0.7890173410404624,
+        "per_request_hit_rate_p10": 0.6474176985804893,
+        "per_request_hit_rate_p90": 0.8242735590030174,
+        "overflow_occurred": false,
+        "overflow_turn": null
+      },
+      {
+        "strategy_name": "Raw Append-Only",
+        "total_requests": 19,
+        "total_prompt_tokens": 29853,
+        "total_cached_tokens": 23434,
+        "total_computed_tokens": 6419,
+        "overall_hit_rate": 0.7849797340300807,
+        "per_request_hit_rate_median": 0.7890173410404624,
+        "per_request_hit_rate_p10": 0.6474176985804893,
+        "per_request_hit_rate_p90": 0.8242735590030174,
+        "overflow_occurred": false,
+        "overflow_turn": null
+      }
+    ]
+  },
+  "fixed_depth_results": {
+    "data": [
+      {
+        "strategy_name": "Context-Engineer (Full)",
+        "total_requests": 4,
+        "total_prompt_tokens": 11187,
+        "total_cached_tokens": 7296,
+        "total_computed_tokens": 3891,
+        "overall_hit_rate": 0.6521855725395549,
+        "per_request_hit_rate_median": 0.8691922802001429,
+        "per_request_hit_rate_p10": 0.2607576840600429,
+        "per_request_hit_rate_p90": 0.8694098113392706,
+        "overflow_occurred": false,
+        "overflow_turn": null
+      },
+      {
+        "strategy_name": "Suffix-RAG (Unquantized Window)",
+        "total_requests": 4,
+        "total_prompt_tokens": 11561,
+        "total_cached_tokens": 7323,
+        "total_computed_tokens": 4238,
+        "overall_hit_rate": 0.6334227142980711,
+        "per_request_hit_rate_median": 0.8469838123483081,
+        "per_request_hit_rate_p10": 0.2536543124350537,
+        "per_request_hit_rate_p90": 0.8509408615358858,
+        "overflow_occurred": false,
+        "overflow_turn": null
+      },
+      {
+        "strategy_name": "Chronological RAG",
+        "total_requests": 4,
+        "total_prompt_tokens": 11526,
+        "total_cached_tokens": 2805,
+        "total_computed_tokens": 8721,
+        "overall_hit_rate": 0.24336283185840707,
+        "per_request_hit_rate_median": 0.2409284638948287,
+        "per_request_hit_rate_p10": 0.06911049339819321,
+        "per_request_hit_rate_p90": 0.4231270872058823,
+        "overflow_occurred": false,
+        "overflow_turn": null
+      },
+      {
+        "strategy_name": "Plain Left-Truncation",
+        "total_requests": 4,
+        "total_prompt_tokens": 11187,
+        "total_cached_tokens": 7296,
+        "total_computed_tokens": 3891,
+        "overall_hit_rate": 0.6521855725395549,
+        "per_request_hit_rate_median": 0.8691922802001429,
+        "per_request_hit_rate_p10": 0.2607576840600429,
+        "per_request_hit_rate_p90": 0.8694098113392706,
+        "overflow_occurred": false,
+        "overflow_turn": null
+      },
+      {
+        "strategy_name": "Raw Append-Only",
+        "total_requests": 4,
+        "total_prompt_tokens": 11187,
+        "total_cached_tokens": 7296,
+        "total_computed_tokens": 3891,
+        "overall_hit_rate": 0.6521855725395549,
+        "per_request_hit_rate_median": 0.8691922802001429,
+        "per_request_hit_rate_p10": 0.2607576840600429,
+        "per_request_hit_rate_p90": 0.8694098113392706,
+        "overflow_occurred": false,
+        "overflow_turn": null
+      }
+    ]
+  },
+  "gates_summary": [
+    {
+      "gate_name": "budget_enforced",
+      "status": "PASSED",
+      "details": "Prompt tokens: 228 <= ceiling: 3840"
+    },
+    {
+      "gate_name": "prefix_stability",
+      "status": "PASSED",
+      "details": "Initial request (baseline established)"
+    },
+    {
+      "gate_name": "fact_present",
+      "status": "PASSED",
+      "details": "Needle 'node-alpha-19' present in assembled messages: True"
+    },
+    {
+      "gate_name": "fact_recalled",
+      "status": "SKIPPED",
+      "details": "Offline or mock backend: live generation skipped to avoid fabricated results (EV1)"
+    }
+  ]
+}

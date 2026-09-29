@@ -96,10 +96,10 @@ if client.is_available():
 
 ## 5. Empirical Benchmark & Evaluator
 
-Run the empirical benchmark harness measuring fact presence, recall, and prefix cache hit ratios across 100 turns:
+Run the empirical benchmark suite measuring fact presence, recall, and prefix cache hit ratios across turns:
 
 ```bash
-python -m harness.evaluator
+python -m benchmarks.run --backend mock
 ```
 
 ### Build Gates Verified

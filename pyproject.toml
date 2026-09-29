@@ -78,6 +78,7 @@ context_engineer = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src", "."]
 python_files = ["test_*.py"]
 addopts = "-ra --strict-markers"
 
