@@ -13,10 +13,11 @@ from context_engineer.config import ContextConfig
 from context_engineer.errors import ContextBudgetError
 from context_engineer.layers.cap import apply_cap_layer
 from context_engineer.layers.pin import split_pinned
-from context_engineer.layers.retrieve import BM25Retriever
 from context_engineer.layers.window import memoized_turn_cost, window_boundary
+from context_engineer.protocols import Retriever, Summarizer
 from context_engineer.redaction.redactor import RegexRedactor
 from context_engineer.render import gate, render, validate_messages
+from context_engineer.retrievers.bm25 import BM25Retriever
 from context_engineer.summarizers.extractive import ExtractiveSummarizer
 from context_engineer.tokenizers import (
     Tokenizer,
@@ -41,6 +42,8 @@ def assemble_context(
     system_prompt: str = "",
     config: ContextConfig | None = None,
     tokenizer: Tokenizer | None = None,
+    retriever: Retriever | None = None,
+    summarizer: Summarizer | None = None,
 ) -> AssembledContext:
     """Assembles multi-turn conversational context enforcing deterministic prefix-cache alignment (Algorithm A3).
 
@@ -129,11 +132,14 @@ def assemble_context(
     dropped = list(unpinned[:boundary])
 
     # 6. Summarize Dropped Turns (Algorithm A6: pure function of dropped turns only)
+    active_summarizer = summarizer or ExtractiveSummarizer(
+        redactor=RegexRedactor(mode=cfg.redaction_mode)
+    )
     summary_text: str | None = None
     if dropped and cfg.max_summary_tokens > 0:
-        redactor = RegexRedactor(mode=cfg.redaction_mode)
-        summarizer = ExtractiveSummarizer(redactor=redactor)
-        raw_summary = summarizer.summarize(dropped, max_tokens=cfg.max_summary_tokens, tok=tok)
+        raw_summary = active_summarizer.summarize(
+            dropped, max_tokens=cfg.max_summary_tokens, tok=tok
+        )
         summary_text = raw_summary if raw_summary else None
 
     # 7. Dynamic Suffix: Query cost & Bounded Retrieval (Algorithm A9)
@@ -148,8 +154,8 @@ def assemble_context(
             )
 
     retrieval_budget = max(0, suffix_reserve - query_tokens)
-    retriever = BM25Retriever()
-    hits = retriever.retrieve(
+    active_retriever = retriever or BM25Retriever()
+    hits = active_retriever.retrieve(
         query=query,
         candidates=dropped,
         k=cfg.retrieval_top_k,
@@ -196,14 +202,14 @@ def assemble_context(
         dropped = list(unpinned[:boundary])
 
         if dropped and cfg.max_summary_tokens > 0:
-            redactor = RegexRedactor(mode=cfg.redaction_mode)
-            summarizer = ExtractiveSummarizer(redactor=redactor)
-            raw_summary = summarizer.summarize(dropped, max_tokens=cfg.max_summary_tokens, tok=tok)
+            raw_summary = active_summarizer.summarize(
+                dropped, max_tokens=cfg.max_summary_tokens, tok=tok
+            )
             summary_text = raw_summary if raw_summary else None
         else:
             summary_text = None
 
-        hits = retriever.retrieve(
+        hits = active_retriever.retrieve(
             query=query,
             candidates=dropped,
             k=cfg.retrieval_top_k,

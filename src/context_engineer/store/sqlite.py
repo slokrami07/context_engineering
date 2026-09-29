@@ -197,3 +197,7 @@ class SQLiteStore(BaseConversationStore):
             cursor.execute("DELETE FROM turns WHERE session_id = ?", (session_id,))
             cursor.execute("DELETE FROM sessions WHERE session_id = ?", (session_id,))
             conn.commit()
+
+
+# Alias for PEP 8 naming convention
+SqliteStore = SQLiteStore

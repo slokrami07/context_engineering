@@ -5,14 +5,13 @@ Never mutates the window boundary, summary, or prefix zone.
 """
 
 import dataclasses
-import re
 from collections.abc import Sequence
 
-from rank_bm25 import BM25Okapi
-
 from context_engineer.config import ContextConfig
-from context_engineer.protocols import Retriever
-from context_engineer.tokenizers import Tokenizer, resolve_tokenizer, truncate_text_to_tokens
+from context_engineer.retrievers.bm25 import (
+    BM25Retriever,
+)
+from context_engineer.tokenizers import Tokenizer, resolve_tokenizer
 from context_engineer.types import Turn
 
 
@@ -38,101 +37,6 @@ class RetrieveResult:
     def score(self) -> float:
         """Deprecated score property."""
         return 1.0 if self.retrieved_turns else 0.0
-
-
-def _tokenize_for_bm25(text: str) -> list[str]:
-    """Tokenizes text for BM25, splitting identifiers like worker-12 into sub-tokens."""
-    tokens: list[str] = []
-    # Find all alphanumeric sequences and hyphenated words
-    for word in re.findall(r"[\w.-]+", text.lower()):
-        tokens.append(word)
-        # Split on hyphens/underscores/dots to index sub-components
-        subparts = [p for p in re.split(r"[-_.]", word) if p and p != word]
-        tokens.extend(subparts)
-    return tokens or ["<empty>"]
-
-
-def get_uncapped_turn(turn: Turn) -> Turn:
-    """Returns a copy of the turn with raw uncapped content and tool_output restored."""
-    content = turn.raw_content if turn.raw_content is not None else turn.content
-    tool_output = turn.raw_tool_output if turn.raw_tool_output is not None else turn.tool_output
-    return dataclasses.replace(
-        turn,
-        content=content,
-        tool_output=tool_output,
-        is_capped=False,
-    )
-
-
-class BM25Retriever(Retriever):
-    """Deterministic BM25 retriever bounding hits within allocated token budget (Algorithm A9)."""
-
-    def retrieve(
-        self,
-        query: str,
-        candidates: Sequence[Turn],
-        *,
-        k: int,
-        token_budget: int,
-        tok: Tokenizer,
-    ) -> list[Turn]:
-        """Retrieves top-k relevant turns bounded within the allocated token budget."""
-        if not candidates or not query or token_budget <= 0 or k <= 0:
-            return []
-
-        # 1. Tokenize corpus
-        corpus_tokens = [_tokenize_for_bm25(t.get_uncapped_text()) for t in candidates]
-        query_tokens = _tokenize_for_bm25(query)
-        if not query_tokens:
-            return []
-
-        bm25 = BM25Okapi(corpus_tokens)
-        scores = bm25.get_scores(query_tokens)
-
-        # 2. Rank candidates: score desc, then id desc (most recent first)
-        ranked_indices = sorted(
-            range(len(candidates)),
-            key=lambda idx: (scores[idx], candidates[idx].id),
-            reverse=True,
-        )
-
-        selected: list[Turn] = []
-        used_tokens = 0
-
-        for idx in ranked_indices:
-            if len(selected) >= k:
-                break
-            score = float(scores[idx])
-            if score <= 0.0:
-                continue
-
-            candidate = candidates[idx]
-            uncapped = get_uncapped_turn(candidate)
-            cost = tok.count(uncapped.get_effective_text())
-
-            if used_tokens + cost <= token_budget:
-                selected.append(uncapped)
-                used_tokens += cost
-            else:
-                remaining_tokens = token_budget - used_tokens
-                if remaining_tokens > 20:
-                    # Truncate hit at line/sentence boundary so it strictly fits within budget
-                    truncated_content = truncate_text_to_tokens(
-                        uncapped.content,
-                        max_tokens=remaining_tokens,
-                        tokenizer=tok,
-                    )
-                    bounded_turn = dataclasses.replace(
-                        uncapped,
-                        content=truncated_content,
-                        tool_output=None,
-                    )
-                    selected.append(bounded_turn)
-                    used_tokens += tok.count(bounded_turn.get_effective_text())
-                break
-
-        # Return hits in deterministic chronological order
-        return sorted(selected, key=lambda t: t.id)
 
 
 def apply_retrieve_layer(

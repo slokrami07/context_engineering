@@ -29,6 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Phase 2: Property-based test suite (`tests/test_invariants.py`) covering Invariants I1 through I10.
 - Phase 2: Simulated prefix reuse test suite (`tests/test_prefix_reuse.py`) reporting 100.00% reuse between consecutive non-compaction turns.
 - Phase 2: Acceptance test (`tests/test_domain_strings.py`) asserting zero domain-specific strings in library source code.
+- Phase 3: Protocol interface definitions (`DenseEmbedder`, `Store`, `Backend`, `ChatResult`, `CacheStats` in `context_engineer.protocols`).
+- Phase 3: Pluggable retrieval subsystem (`context_engineer.retrievers`):
+  - `BM25Retriever`: Hardened BM25 with SHA-256 candidate index caching (`R4`), small-corpus IDF flooring (`R5`), query expansion (`R6`), tie-breaking by score then ID (`R8`), identifier splitting, and hard token bounding.
+  - `DenseRetriever` & `OfflineSemanticEmbedder`: Offline semantic vector projection using local hashing/numpy with zero external downloads.
+  - `HybridRetriever`: Reciprocal Rank Fusion (RRF: $\sum \frac{w}{60 + \text{rank}}$) fusing lexical BM25 and dense semantic ranking with dense/lexical tie-breaking.
+- Phase 3: Thread-safe `InMemoryStore` and updated `SqliteStore` satisfying the `Store` protocol (`context_engineer.store`).
+- Phase 3: `MockBackend` conforming to the `Backend` protocol with call recording and configurable cache stats simulation (`context_engineer.backends`).
+- Phase 3: Formal contract test suites (`tests/contracts/`) covering Tokenizer (4 tests), Retriever across BM25/Dense/Hybrid (18 tests), Summarizer (3 tests), Redactor (3 tests), Store across InMemory/Sqlite (10 tests), and Backend (3 tests).
+- Phase 3: Acceptance tests for hybrid retrieval (`tests/test_hybrid_retrieval.py`) proving zero-change pipeline protocol swapping, hard token budget bounding, and Hybrid beating BM25 on paraphrase scenarios with no token overlap.
 
 ### Changed
 - Phase 0: Refactored `pyproject.toml` to keep core dependency-light (`rank-bm25`, `httpx`) with optional extras (`[hf]`, `[tiktoken]`, `[rich]`, `[dense]`, `[otel]`, `[postgres]`, `[redis]`, `[bench]`, `[dev]`).
@@ -40,6 +49,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Phase 2: Context ribbon rendering restructured to fuse system prompt, pinned facts, and narrative summary into a single head `system` message, avoiding middle-dialogue system messages (`PL5`, `S7`).
 - Phase 2: Memory retrieval is now read-only over dropped turns, hard-bounded to `suffix_reserve - query_tokens`, and does not mutate the window boundary (`R1`-`R3`, `PL1`-`PL3`).
 - Phase 2: Capping now operates idempotently before windowing, preserving invariant pinned turns without modification (`C1`, `P3`, `I8`).
+- Phase 3: `assemble_context` accepts pluggable `retriever: Retriever | None` and `summarizer: Summarizer | None`, allowing zero-pipeline-change implementation swapping.
 
 ### Removed
 - Legacy orphan directory `context_engine/`.
